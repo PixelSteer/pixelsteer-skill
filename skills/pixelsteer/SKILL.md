@@ -1,9 +1,9 @@
 ---
-name: frontend-visual-feedback
+name: pixelsteer
 description: Configure PixelSteer and act on frontend visual feedback from its browser overlay. Use when a developer wants to point at a UI element, describe a change, and have Claude Code, Codex, or OpenCode edit the frontend source.
 ---
 
-# Frontend visual feedback
+# PixelSteer
 
 Use PixelSteer as a file-based feedback channel. PixelSteer writes tasks under the frontend project; this coding-agent session claims those files and owns source edits. Never start PixelSteer, the frontend dev server, or a nested coding-agent process from the agent sandbox.
 

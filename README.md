@@ -25,15 +25,15 @@ Install only this skill globally:
 
 ```bash
 npx skills add PixelSteer/pixelsteer-skill \
-  --skill frontend-visual-feedback \
+  --skill pixelsteer \
   -g
 ```
 
 Then open your frontend project and invoke the skill with your agent:
 
-- Codex: `$frontend-visual-feedback`
-- Claude Code: `/frontend-visual-feedback`
-- OpenCode: ask it to use `frontend-visual-feedback`
+- Codex: `$pixelsteer`
+- Claude Code: `/pixelsteer`
+- OpenCode: ask it to use `pixelsteer`
 
 The skill inspects the project, configures the PixelSteer development workflow, and tells you the single command to run.
 
