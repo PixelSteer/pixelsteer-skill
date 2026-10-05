@@ -21,7 +21,7 @@ Perform routine setup and startup yourself. If a command is blocked by sandbox o
 
 ## Ensure PixelSteer is usable
 
-Prefer an existing project-local installation. If none exists, check for a usable `pixelsteer` executable on `PATH`. Verify the chosen launcher with `--help`; a dependency entry in `package.json` does not prove that the executable is installed. When checking a local package through its package manager, avoid implicitly downloading a package just to discover whether it exists.
+Prefer an existing project-local installation. If none exists, check for a usable `pixelsteer` executable on `PATH`. Verify the chosen launcher with `--help` and confirm its usage lists `tasks`. Then check `tasks --help`. If task commands are absent, upgrade or repair the installation (or rebuild a supplied development binary) before continuing; do not invoke an unknown subcommand on an older binary, since it may start a server. A dependency entry in `package.json` does not prove that the executable is installed. When checking a local package through its package manager, avoid implicitly downloading a package just to discover whether it exists.
 
 If PixelSteer is missing, install `pixelsteer` as a development dependency using the project's package manager. The npm package requires Node.js 18 or newer and supports Windows, macOS, and Linux on x64 and ARM64. Its postinstall downloads and verifies the native executable; invoke it through the package manager's local executable support rather than hard-coding a vendor path. For a frontend without a JavaScript package manifest, use an isolated tool installation rather than adding an unrelated project manifest.
 
@@ -50,76 +50,79 @@ During the session, inspect process exits and stale heartbeats. Recover processe
 
 ## Handle tasks
 
-Task files live inside the frontend project:
+Use the verified PixelSteer launcher for queue operations. In the examples below,
+replace `pixelsteer` with that launcher and `/absolute/frontend` with the frontend
+root. Tasks remain in `.codex/tasks/{pending,working,completed,failed}`; the CLI
+handles their atomic updates and preserves all selection context and other fields.
+Do not write a custom polling script or hand-edit lifecycle JSON.
 
-```text
-.codex/tasks/
-  server.json
-  pending/<task-id>.json
-  working/<task-id>.json
-  completed/<task-id>.json
-  failed/<task-id>.json
+Start one persistent command immediately after verifying the servers:
+
+```sh
+pixelsteer tasks next --project-root /absolute/frontend --wait
 ```
 
-Start one long-running directory-wait loop using the shell or runtime available
-on this platform and the absolute frontend root. Each iteration must check
-`server.json` freshness, look for a JSON file in `pending`, and otherwise sleep
-briefly (about one second). Return the exact pending path when a task appears.
-If the heartbeat is missing, malformed, or stale, recheck after a short delay
-to allow for a concurrent file replacement; if it remains unhealthy, exit the
-wait and follow the recovery steps above. Do not use a loop that watches only
-`pending` and can wait forever after the server dies.
+The command watches the queue, checks the server heartbeat, and quietly waits.
+It atomically claims one task, records working status, and prints one JSON line
+with `event: "task"` and the full `task` object, including its ID, prompt, page URL,
+and selections. The command then exits. That task already belongs to this agent
+session; use the returned context directly without another read or claim command.
+Run only one outstanding `next` or `complete --wait` command per agent session.
 
-The wait is intentionally open-ended. When the shell tool yields a running
-session identifier with no output, keep polling that same session with bounded
-tool waits so you can respond to messages and process failures. Do not end
-the turn or tell the developer that no task arrived merely because an initial
-yield or poll was empty. An empty queue is normal while the developer is
-selecting elements. Continue waiting until a task appears, the developer asks
-to stop, or the PixelSteer heartbeat becomes stale.
+When the execution tool yields a running session identifier, resume that same
+session with bounded waits (at most 30 seconds). A completion acknowledgement
+alone does not mean the waiting process has exited. Do not start another waiter,
+end the turn, or report an empty queue because a tool poll returned no task.
+Continue until a task appears, the developer asks to stop, or the command reports
+an unhealthy heartbeat. On heartbeat failure, follow the recovery steps above.
+If interrupted after claiming but before receiving its output, inspect working
+files and recover only the claim made by this session; do not claim another task
+and leave the first one stranded.
 
-Use the filesystem for task delivery, claims, progress, and results; HTTP
-requests are for startup verification and troubleshooting. Do not submit or
-claim tasks through PixelSteer's HTTP API. If Auto execute is disabled in PixelSteer,
-items marked `Not sent` are only browser-local plan items; a pending task is
-created after the developer clicks **Execute now**.
+Use the task's prompt, page URL, and selections to locate the authoritative
+frontend source. For a plan, handle all numbered selections and notes as one
+coherent change set. Make the smallest appropriate source edits, let the dev
+server update the browser, and validate proportionally. Do not edit generated
+bundles or treat browser mutations as authoritative.
 
-Claim a task by atomically moving its exact resolved path from `pending` to `working`; do not copy it. If the move fails because another session claimed it, look for the next pending task. A successfully moved task belongs to this coding-agent session.
+After success, save the result and start waiting for the next task in one command:
 
-After claiming, update the working JSON atomically through a temporary file in the same directory and set:
-
-```json
-{
-  "status": "working",
-  "startedAt": "<UTC RFC3339 timestamp>",
-  "agentStatus": {
-    "taskId": "<task-id>",
-    "status": "working",
-    "message": "The coding agent is applying visual feedback",
-    "updatedAt": "<UTC RFC3339 timestamp>"
-  }
-}
+```sh
+pixelsteer tasks complete TASK_ID --project-root /absolute/frontend \
+  --result "Updated the heading and checked the rendered page" \
+  --changed-file src/App.tsx --wait
 ```
 
-Preserve all other task fields. PixelSteer watches these files and relays their state to the browser.
+Repeat `--changed-file` for each file changed, using paths relative to the frontend
+root. Supply a truthful result reflecting the validation actually performed.
+Completion atomically publishes the final file before removing the working file.
+It prints a `completed` acknowledgement, then waits and returns the next claimed
+`task` in the same command. Continue the edit → complete-and-wait loop immediately.
+When explicitly ending the session, omit `--wait` from the final completion.
 
-For additional progress, atomically update that task's `agentStatus.message` and `agentStatus.updatedAt` in its working JSON. Every status belongs to a specific task.
+For a longer edit, optionally report useful progress with:
 
-Use the task's prompt, page URL, and selections to locate the authoritative frontend source. For a plan, treat every numbered selection and note as one coherent change set. Make the smallest appropriate source changes. Do not edit generated bundles or treat browser mutations as authoritative. Let the running dev server and HMR update the browser. Validate proportionally to the change.
-
-After success, create the final JSON atomically at `completed/<task-id>.json`, preserving the original task and setting:
-
-```json
-{
-  "status": "completed",
-  "completedAt": "<UTC RFC3339 timestamp>",
-  "result": "Implemented the requested UI change",
-  "changedFiles": ["src/example.tsx", "src/example.css"]
-}
+```sh
+pixelsteer tasks progress TASK_ID --project-root /absolute/frontend \
+  --message "Updating the layout and checking the mobile view"
 ```
 
-Only after the completed file is in place, remove the corresponding working file. On failure, follow the same sequence with `failed/<task-id>.json`, `status: "failed"`, and a useful reason in `result`.
+If a task cannot be completed, use `tasks fail TASK_ID --result "Specific reason"`
+with the same root and `--wait`; report any files already changed with
+`--changed-file`. Failure saves the result before removing the working file and
+then waits for further feedback. Fix command errors before continuing. If a final
+acknowledgement was printed before a wait failed, that result is already saved;
+recover the server and resume with `tasks next --wait`, without completing it again.
 
-Immediately start a new open-ended wait loop after reporting success or failure. Continue handling feedback until the developer asks to stop or an unresolved runtime failure prevents further work. Never commit `.codex/tasks/`, and never delete or modify task files that belong to another working task.
+A user or test harness may supply a stop-marker file. Pass `--stop-file PATH` to
+every waiting command so it can exit with `event: "stopped"` when that marker
+appears. Otherwise, interrupt the current waiter when the developer asks to stop.
+Then clean up owned servers as described above. An empty queue is normal and is
+never a stop request.
+
+Use these filesystem-backed commands for task delivery and results; HTTP requests
+are for startup verification and troubleshooting. With Auto execute disabled,
+`Not sent` items exist only in the browser until the developer clicks **Execute
+now**. Never commit `.codex/tasks/` or modify another session's working task.
 
 For product documentation, platform downloads, and troubleshooting outside this workflow, direct the developer to [pixelsteer.com](https://pixelsteer.com/) or the [PixelSteer documentation](https://pixelsteer.com/docs/).
