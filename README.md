@@ -35,7 +35,7 @@ Then open your frontend project and invoke the skill with your agent:
 - Claude Code: `/pixelsteer`
 - OpenCode: ask it to use `pixelsteer`
 
-The agent inspects your project, checks for a usable PixelSteer installation, and installs or repairs it when needed. It reuses your frontend dev server or starts it in the background, starts PixelSteer against the app's actual URL, and verifies the proxy before giving you the browser URL. Open that URL and start giving visual feedback; the agent stays active to apply your changes.
+The agent inspects your project, installs PixelSteer if needed, and reuses your frontend dev server or starts it in the background. It launches PixelSteer directly against the app's actual URL; PixelSteer automatically replaces the previous instance targeting that frontend port and preserves queued feedback. The agent verifies the proxy before giving you the browser URL. Open that URL and start giving visual feedback; the agent stays active to apply your changes.
 
 You do not need to run a separate startup command. Your agent may request permission to install dependencies or run local servers if its environment requires it. If the project needs missing configuration or cannot run in that environment, the agent explains the specific blocker.
 
